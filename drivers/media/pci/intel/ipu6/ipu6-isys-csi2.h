@@ -21,7 +21,7 @@ struct ipu6_isys_stream;
 #define INVALID_VC_ID		-1
 #define NR_OF_CSI2_SINK_PADS	1
 #define CSI2_PAD_SINK		0
-#define NR_OF_CSI2_SRC_PADS	8
+#define NR_OF_CSI2_SRC_PADS	16  /* D457 specific */
 #define CSI2_PAD_SRC		1
 #define NR_OF_CSI2_PADS		(NR_OF_CSI2_SINK_PADS + NR_OF_CSI2_SRC_PADS)
 

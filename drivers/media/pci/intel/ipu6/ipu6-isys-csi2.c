@@ -47,6 +47,8 @@ static const u32 csi2_supported_codes[] = {
 	MEDIA_BUS_FMT_META_12,
 	MEDIA_BUS_FMT_META_16,
 	MEDIA_BUS_FMT_META_24,
+	MEDIA_BUS_FMT_VYUY8_1X16, /* D457 specific */
+	MEDIA_BUS_FMT_Y8_1X8,  /* D457 specific */
 	0
 };
 
