@@ -255,19 +255,44 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	ser_serial_link->rx_freq_mhz = 6000;
 	ser_serial_link->tx_freq_mhz = 187;
 
-	ser_pdata->num_video_pipes = 1;
+	/* TO BE VERIFIED if requrie 2 serial link */
+
+	/* D457 specific : Utilize all 4 pipes */
+	ser_pdata->num_video_pipes = 4;
 	ser_pdata->video_pipes = devm_kzalloc(dev,
 				ser_pdata->num_video_pipes * sizeof(*ser_pdata->video_pipes), GFP_KERNEL);
 
-	ser_video_pipe = &ser_pdata->video_pipes[0];
-	ser_video_pipe->serial_link_id = 0;
-	ser_video_pipe->pipe_id = ser_sdinfo->serial_link_id;
-	ser_video_pipe->src_csi_id = 1; /* PHY B typically */
+	for (unsigned int i = 0; i < ser_pdata->num_video_pipes; i++) {
+		ser_video_pipe = &ser_pdata->video_pipes[i];
+		ser_video_pipe->serial_link_id = 0;
+		ser_video_pipe->pipe_id = i;
+		ser_video_pipe->src_csi_id = 1; /* PHY B typically */
 
-	ser_video_pipe->num_data_types = 1;
-	ser_video_pipe->data_types = devm_kzalloc(dev,
-				ser_video_pipe->num_data_types * sizeof(*ser_video_pipe->data_types), GFP_KERNEL);
-	ser_video_pipe->data_types[0] = sensor_dt;
+		/* D457 specific : Specify data types for each pipe */
+		ser_video_pipe->num_data_types = 2;
+		ser_video_pipe->data_types = devm_kzalloc(dev,
+			ser_video_pipe->num_data_types * sizeof(*ser_video_pipe->data_types), GFP_KERNEL);
+
+		switch (i) {
+		case 0:
+		case 1:
+			ser_video_pipe->data_types[0] = 0x1E;
+			ser_video_pipe->data_types[1] = 0x12;
+			break;
+		case 2:
+			ser_video_pipe->data_types[0] = 0x1E;
+			ser_video_pipe->data_types[1] = 0x00;
+			break;
+		case 3:
+			ser_video_pipe->data_types[0] = 0x2A;
+			ser_video_pipe->data_types[1] = 0x00;
+			break;
+		}
+
+		/* D457 specific : Specify BPP to be doubled */
+		/* TO BE FIXED if multiple BPP need to be doubled */
+		ser_video_pipe->dbl_pixel_bpp = 8;
+	}
 
 	ser_pdata->num_csi_links = 1;
 	ser_pdata->csi_links = devm_kzalloc(dev, ser_pdata->num_csi_links * sizeof(*ser_pdata->csi_links), GFP_KERNEL);
@@ -334,7 +359,7 @@ static void *parse_serdes_pdata(struct device *dev)
 		struct max9x_serial_link_pdata *serial_link = &des_pdata->serial_links[serial_link_id];
 		unsigned int video_pipe_id = serial_link_id;
 		struct serdes_subdev_info *serdes_sdinfo = &serdes_pdata->subdev_info[serial_link_id];
-		struct max9x_video_pipe_pdata *des_video_pipe = &des_pdata->video_pipes[video_pipe_id];
+		struct max9x_video_pipe_pdata *des_video_pipe;
 		struct max9x_subdev_pdata *ser_sdinfo = &des_pdata->subdevs[serial_link_id];
 		const char *ser_name = serdes_pdata->ser_name;
 		const char *sensor_name = serdes_sdinfo->board_info.type;
@@ -345,30 +370,80 @@ static void *parse_serdes_pdata(struct device *dev)
 		unsigned int lanes = serdes_pdata->ser_nlanes;
 		unsigned int dt = serdes_sdinfo->sensor_dt;
 
+		/* D457 Specific : 4 video pipes for single D4XX */
+		/* TO BE FIXED : Need to figure out how to use different pipes when multiple D4XX is present */
+		if (strcmp(sensor_name, "d4xx") == 0) {
+			video_pipe_id = 4;
+		}
 		serial_link->link_id = serial_link_id;
 		serial_link->link_type = MAX9X_LINK_TYPE_GMSL2;
 		serial_link->rx_freq_mhz = 6000;
 		serial_link->tx_freq_mhz = 187;
 
-		des_video_pipe->serial_link_id = serial_link_id;
-		des_video_pipe->pipe_id = video_pipe_id;
-		des_video_pipe->src_pipe_id = video_pipe_id;
-		des_video_pipe->num_maps = 3;
-		des_video_pipe->maps = devm_kzalloc(dev,
-					des_video_pipe->num_maps * sizeof(*des_video_pipe->maps), GFP_KERNEL);
+		for (unsigned int i = 0; i < video_pipe_id; i++) {
+			des_video_pipe = &des_pdata->video_pipes[i];
+			des_video_pipe->serial_link_id = serial_link_id;
+			des_video_pipe->pipe_id = i;
+			des_video_pipe->src_pipe_id = video_pipe_id; /* to check for d4xx, why src_pipe is 4*/
 
-		ser_sdinfo->serial_link_id = serial_link_id;
+			/* D457 Specific : Different data types for different pipes 
+			 * pipe 0,1 : 4 maps: 0x00. 0x01, 0x1E, 0x12
+			 * pipe 2   : 3 maps: 0x00. 0x01, 0x1E
+			 * pipe 3   : 3 maps: 0x00. 0x01, 0x2A
+			 */
+			if (strcmp(sensor_name, "d4xx") == 0) {
+				switch (i) {
+				case 0:
+				case 1:
+					des_video_pipe->num_maps = 4;
+					break;
+				case 2:
+				case 3:
+				default:
+					des_video_pipe->num_maps = 3;
+					break;
+				}
+			} else {
+				des_video_pipe->num_maps = 3;
+			}
 
-		SET_CSI_MAP(des_video_pipe->maps, 0, 0, 0x00, video_pipe_id, 0x00, csi_port);
-		SET_CSI_MAP(des_video_pipe->maps, 1, 0, 0x01, video_pipe_id, 0x01, csi_port);
-		SET_CSI_MAP(des_video_pipe->maps, 2, 0, dt, video_pipe_id, dt, csi_port); /* YUV422 8-bit */
+			des_video_pipe->maps = devm_kzalloc(dev,
+						des_video_pipe->num_maps * sizeof(*des_video_pipe->maps), GFP_KERNEL);
 
-		struct max9x_pdata *ser_pdata = parse_ser_pdata(dev, ser_name, serdes_sdinfo->suffix, lanes,
+			ser_sdinfo->serial_link_id = serial_link_id;
+
+			SET_CSI_MAP(des_video_pipe->maps, 0, i, 0x00, i, 0x00, csi_port);
+			SET_CSI_MAP(des_video_pipe->maps, 1, i, 0x01, i, 0x01, csi_port);
+
+			if (strcmp(sensor_name, "d4xx") == 0) {
+				switch (i) {
+				case 0:
+				case 1:
+				case 2:
+				default:
+					SET_CSI_MAP(des_video_pipe->maps, 2, i, 0x1E, i, 0x1E, csi_port); /* YUV422 8-bit */
+					break;
+				case 3:
+					SET_CSI_MAP(des_video_pipe->maps, 2, i, 0x2A, i, 0x2A, csi_port); /* RAW10 */
+					break;
+				}
+
+				if (des_video_pipe->num_maps == 4) {
+					SET_CSI_MAP(des_video_pipe->maps, 3, i, 0x12, i, 0x12, csi_port); /* Metadata */
+				}
+
+				/* D457 specific : double BPP for all pipes */
+				des_video_pipe->dbl_pixel_bpp = 8;
+			} else {
+				SET_CSI_MAP(des_video_pipe->maps, 2, i, dt, i, dt, csi_port);
+			}
+
+			struct max9x_pdata *ser_pdata = parse_ser_pdata(dev, ser_name, serdes_sdinfo->suffix, lanes,
 								ser_phys_addr, ser_alias, ser_sdinfo, dt);
 
-		parse_sensor_pdata(dev, sensor_name, serdes_sdinfo->suffix, lanes, sensor_phys_addr, sensor_alias,
+			parse_sensor_pdata(dev, sensor_name, serdes_sdinfo->suffix, lanes, sensor_phys_addr, sensor_alias,
 				   ser_sdinfo, ser_pdata);
-
+		}
 	}
 
 	des_pdata->num_csi_links = 1;

@@ -55,6 +55,11 @@ struct max9x_video_pipe_pdata {
 	unsigned int src_csi_id;
 	unsigned int *data_types;
 	unsigned int num_data_types;
+
+	// Common
+	unsigned int soft_min_pixel_bpp;
+	unsigned int soft_max_pixel_bpp;
+	unsigned int dbl_pixel_bpp;
 };
 
 struct max9x_serdes_phy_map {
