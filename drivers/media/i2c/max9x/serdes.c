@@ -1567,12 +1567,110 @@ static int max9x_disable_streams(struct v4l2_subdev *subdev,
 {
 	return _max9x_set_stream(subdev, state, pad, streams_mask, false);
 }
+static bool is_source_pad(struct media_pad *pad)
+{
+    return pad->flags & MEDIA_PAD_FL_SOURCE;
+}
 
+static bool is_sink_pad(struct media_pad *pad)
+{
+    return pad->flags & MEDIA_PAD_FL_SINK;
+}
+static int max9x_get_remote_stream_format(struct v4l2_subdev *sd, 
+                                         u32 pad, u32 stream,
+                                         struct v4l2_mbus_framefmt *format)
+{
+    struct max9x_common *common = max9x_sd_to_common(sd);
+    struct max9x_serdes_v4l *v4l = &common->v4l;
+    struct media_pad *local_pad;
+    struct media_pad *remote_pad;
+    struct v4l2_subdev *remote_sd;
+    struct v4l2_subdev_format fmt = {0};
+    int ret;
+
+    if (pad >= v4l->num_pads) {
+        dev_err(sd->dev, "Invalid pad %u\n", pad);
+        return -EINVAL;
+    }
+
+    local_pad = &v4l->pads[pad];
+
+    // Find the remote pad connected to this local pad
+    remote_pad = media_pad_remote_pad_first(local_pad);
+    if (IS_ERR_OR_NULL(remote_pad)) {
+        dev_err(sd->dev, "No remote pad found for pad %u\n", pad);
+        return IS_ERR(remote_pad) ? PTR_ERR(remote_pad) : -ENODEV;
+    }
+
+    if (!remote_pad->entity) {
+        dev_err(sd->dev, "Remote pad has no entity\n");
+        return -ENODEV;
+    }
+
+    // Get the remote subdev
+    remote_sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+    if (!remote_sd) {
+        dev_err(sd->dev, "Failed to resolve entity to subdev\n");
+        return -ENODEV;
+    }
+
+    // Query the format from remote subdev
+    fmt.which = V4L2_SUBDEV_FORMAT_ACTIVE;
+    fmt.pad = remote_pad->index;
+    fmt.stream = stream;
+
+    ret = v4l2_subdev_call(remote_sd, pad, get_fmt, NULL, &fmt);
+    if (ret) {
+        dev_err(sd->dev, "Failed to get format from remote subdev: %d\n", ret);
+        return ret;
+    }
+
+    *format = fmt.format;
+
+    dev_dbg(sd->dev, "Remote format: %ux%u code:0x%x from %s pad:%u stream:%u\n",
+            format->width, format->height, format->code,
+            remote_sd->name, remote_pad->index, stream);
+
+    return 0;
+}
+static int max9x_get_routing_stream_format(struct v4l2_subdev *sd,
+										  struct v4l2_subdev_state *state,
+										  u32 source_pad, u32 source_stream,
+										  struct v4l2_mbus_framefmt *format)
+{
+    struct v4l2_subdev_krouting *routing = &state->routing;
+    u32 sink_pad = 0, sink_stream = 0;
+    bool route_found = false;
+    
+    // Find the sink pad/stream that routes to this source pad/stream
+    for (unsigned int i = 0; i < routing->num_routes; i++) {
+        const struct v4l2_subdev_route *route = &routing->routes[i];
+        
+        if (route->source_pad == source_pad && 
+            route->source_stream == source_stream &&
+            (route->flags & V4L2_SUBDEV_ROUTE_FL_ACTIVE)) {
+            sink_pad = route->sink_pad;
+            sink_stream = route->sink_stream;
+            route_found = true;
+            break;
+        }
+    }
+    
+    if (!route_found) {
+        dev_err(sd->dev, "No active route found for source pad:%u stream:%u\n",
+                source_pad, source_stream);
+        return -ENOENT;
+    }
+    
+    // Now get format from the connected entity on the sink side
+    return max9x_get_remote_stream_format(sd, sink_pad, sink_stream, format);
+}
 static struct v4l2_mbus_framefmt *__max9x_get_ffmt(struct v4l2_subdev *sd,
 			    struct v4l2_subdev_state *v4l2_state,
 			    struct v4l2_subdev_format *fmt)
 {
 	struct max9x_common *common = max9x_sd_to_common(sd);
+	struct media_pad *pad = &common->v4l.pads[fmt->pad];
 
 	if (IS_ERR_OR_NULL(fmt)) {
 		dev_err(common->dev, "Invalid fmt %p", fmt);
@@ -1587,7 +1685,43 @@ static struct v4l2_mbus_framefmt *__max9x_get_ffmt(struct v4l2_subdev *sd,
 	if (fmt->which == V4L2_SUBDEV_FORMAT_TRY)
 		return v4l2_subdev_state_get_format(v4l2_state, fmt->pad, fmt->stream);
 
-	return &common->v4l.ffmts[fmt->pad];
+	/* D457 specific : auto get format from sink / source pad */
+		if (fmt->pad >= 0 && fmt->pad < common->v4l.num_pads) {
+		if (is_sink_pad(pad)) {
+			int ret = max9x_get_remote_stream_format(sd, fmt->pad, fmt->stream, &fmt->format);
+			if (ret) {
+				dev_err(sd->dev, "Failed to get remote stream format for pad %d, stream %d: %d",
+					fmt->pad, fmt->stream, ret);
+				dev_dbg(sd->dev, "%s fallback fmt->which=%d, pad=%d, width=%d, height=%d, code=0x%x\n",
+					__func__, fmt->which, fmt->pad,
+					fmt->format.width, fmt->format.height, fmt->format.code);
+				return &common->v4l.ffmts[fmt->pad]; // Fallback to local format
+			}
+
+			dev_dbg(sd->dev, "%s remote fmt->which=%d, pad=%d, width=%d, height=%d, code=0x%x\n",
+				__func__, fmt->which, fmt->pad, fmt->format.width, fmt->format.height, fmt->format.code);
+			return &fmt->format;
+		} else if (is_source_pad(pad)) {
+			int ret = max9x_get_routing_stream_format(sd, v4l2_state, fmt->pad, fmt->stream, &fmt->format);
+			if (ret) {
+				dev_err(sd->dev, "Failed to get routing stream format for pad %d, stream %d: %d",
+					fmt->pad, fmt->stream, ret);
+				dev_err(sd->dev, "%s fallback fmt->which=%d, pad=%d, width=%d, height=%d, code=0x%x\n",
+					__func__, fmt->which, fmt->pad, fmt->format.width, fmt->format.height, fmt->format.code);
+				return &common->v4l.ffmts[fmt->pad];
+			}
+
+			dev_dbg(sd->dev, "%s routing fmt->which=%d, pad=%d, width=%d, height=%d, code=0x%x\n",
+				__func__, fmt->which, fmt->pad, fmt->format.width, fmt->format.height, fmt->format.code);
+			common->v4l.ffmts[fmt->pad] = fmt->format;
+			return &fmt->format;
+		}
+	}
+
+	if (fmt->pad >= 0 && fmt->pad < common->v4l.num_pads)
+		return &common->v4l.ffmts[fmt->pad];
+
+	return ERR_PTR(-EINVAL);
 }
 
 static int max9x_get_fmt(struct v4l2_subdev *sd,
