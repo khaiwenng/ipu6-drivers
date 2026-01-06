@@ -98,6 +98,8 @@ enum max9295_gpio_pull_updn_sel {
 #define MAX9295_FRONTTOP_0_LINE_INFO BIT(6)
 #define MAX9295_FRONTTOP_0_SEL_CSI_FIELD(pipe_id) BIT(pipe_id)
 #define MAX9295_FRONTTOP_0_START_CSI_FIELD(csi_id) BIT((csi_id) + 4)
+#define MAX9295_FRONTTOP_1(pipe_id) (0x309 + ((pipe_id) * 2))
+#define MAX9295_FRONTTOP_1_VC_SEL(vc) BIT(vc)
 #define MAX9295_FRONTTOP_9 (0x311)
 #define MAX9295_FRONTTOP_9_START_VIDEO_FIELD(pipe_id, csi_id) BIT((pipe_id) + 4 * (csi_id))
 
@@ -107,6 +109,9 @@ enum max9295_gpio_pull_updn_sel {
 #define MAX9295_FRONTTOP_11 (0x313)
 #define MAX9295_FRONTTOP_11_DBL10_FIELD(pipe_id) BIT(pipe_id)
 #define MAX9295_FRONTTOP_11_DBL12_FIELD(pipe_id) BIT((pipe_id) + 4)
+#define MAX9295_FRONTTOP_13 (0x315)
+#define MAX9295_FRONTTOP_13_INDEPENDENT_VS BIT(7)
+
 
 #define MAX9295_MEM_DT_SEL(pipe_id, dt_slot) (0x314 + (dt_slot) / 2 * 0xC2 + 2 * (pipe_id) + (dt_slot))
 #define MAX9295_MEM_DT_SEL_DT_FIELD GENMASK(5, 0)

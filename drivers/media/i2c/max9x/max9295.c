@@ -152,6 +152,11 @@ static int max9295_gpio_direction_output(struct gpio_chip *chip, unsigned int of
 	// Disable remote control over SerDes link
 	val |= MAX9X_FIELD_PREP(MAX9295_GPIO_A_RX_EN_FIELD, 0U);
 
+	// D457 Specific: Set output type to Push-Pull
+	regmap_update_bits(map, MAX9295_GPIO_B(offset),
+		MAX9295_GPIO_B_OUT_TYPE_FIELD,
+		MAX9X_FIELD_PREP(MAX9295_GPIO_B_OUT_TYPE_FIELD, 1U));
+
 	return regmap_update_bits(map, MAX9295_GPIO_A(offset), mask, val);
 }
 
@@ -268,6 +273,21 @@ static int max9295_set_pipe_csi_enabled(struct max9x_common *common,
 			MAX9295_REG2_VID_TX_EN_FIELD(pipe_id),
 			MAX9X_FIELD_PREP(MAX9295_REG2_VID_TX_EN_FIELD(pipe_id), enable ? 1U : 0U))
 	);
+
+	/* D457 Specific: Fix VC per pipe
+	 * Pipe 0 : VC 0
+	 * Pipe 1 : VC 1
+	 * Pipe 2 : VC 2
+	 * Pipe 3 : VC 3
+	 */
+	TRY(ret, regmap_write(map, MAX9295_FRONTTOP_1(pipe_id), 1 << pipe_id));
+	TRY(ret, regmap_write(map, MAX9295_FRONTTOP_1(pipe_id) + 1, 0U));
+
+	/* D457 Specific: Enable Independent VS mode
+	 * Each stream from D457 has their own VS signal.
+	 * Configure MAX9295 to detect VS signal correctly from D457 on each pipe
+	 */
+	TRY(ret, regmap_update_bits(map, MAX9295_FRONTTOP_13, MAX9295_FRONTTOP_13_INDEPENDENT_VS, MAX9X_FIELD_PREP(MAX9295_FRONTTOP_13_INDEPENDENT_VS, 1U)));
 
 	return 0;
 }
