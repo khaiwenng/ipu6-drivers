@@ -434,10 +434,7 @@ static int max9296_set_video_pipe_map(struct max9x_common *common, unsigned int 
 			MAX9X_FIELD_PREP(MAX9296_MAP_DST_L_DT_FIELD, mipi_map->dst_dt))
 	);
 
-	TRY(ret, regmap_write(map, MAX9296_MAP_SRCDST_H(pipe_id, map_id),
-			MAX9X_FIELD_PREP(MAX9296_MAP_SRCDST_H_SRC_VC_FIELD, mipi_map->src_vc) |
-			MAX9X_FIELD_PREP(MAX9296_MAP_SRCDST_H_DST_VC_FIELD, mipi_map->dst_vc))
-	);
+	/* D457 Specific : Remove unnecessary VC mapping on SRCDST_H */
 
 	TRY(ret, regmap_update_bits(map, MAX9296_MAP_DPHY_DEST(pipe_id, map_id),
 			MAX9296_MAP_DPHY_DEST_FIELD(map_id),
@@ -471,11 +468,14 @@ static int max9296_set_csi_double_loading_mode(struct max9x_common *common, unsi
 		value = 0;
 		break;
 	case 8:
-		value =	FIELD_PREP(MAX9296_MIPI_TX_ALT_MEM_8BPP, 1U);
+		/* D457 specific
+		 * use ALT2_MEM for 8BPP
+		 */
+		value =	FIELD_PREP(MAX9296_MIPI_TX_ALT2_MEM_8BPP, 1U);
 		// To fully support 8bpp, additional register writes are
 		// needed for 'bpp8dbl' and 'bpp8dbl_mode' fields on each pipe.
-		dev_err(dev, "8 BPP currently unsupported for pixel doubling");
-		return -EINVAL;
+		dev_dbg(dev, "8BPP doubling might need additional writes on each pipe.");
+		break;
 	case 10:
 		value =	FIELD_PREP(MAX9296_MIPI_TX_ALT_MEM_10BPP, 1U);
 		break;
@@ -491,9 +491,12 @@ static int max9296_set_csi_double_loading_mode(struct max9x_common *common, unsi
 		dev_info(dev, "Configuring double loading mode on CSI %d: %u bpp -> %u bpp",
 			csi_id, bpp, (bpp * 2));
 
+	/* D457 specific
+	 * update ALT2_MEM for 8BPP
+	 */
 	// Enable alt mem mapping
 	return regmap_update_bits(map, MAX9296_MIPI_TX_ALT_MEM(csi_id),
-			MAX9296_MIPI_TX_ALT_MEM_FIELD, value);
+			MAX9296_MIPI_TX_ALT2_MEM_8BPP, value);
 }
 
 static int max9296_set_csi_link_enabled(struct max9x_common *common, unsigned int csi_id, bool enable)
@@ -545,6 +548,14 @@ static int max9296_set_csi_link_enabled(struct max9x_common *common, unsigned in
 		ret = max9296_set_phy_dpll_enabled(common, csi_id, false);
 		if (ret)
 			goto err_unlock;
+
+		/* D457 Specific
+		 * Add additional reset to clear datapath
+		 */
+		ret = max9296_serial_link_reset(common, csi_id);
+		if (ret) {
+			goto err_unlock;
+		}
 	}
 
 	if (enable)
