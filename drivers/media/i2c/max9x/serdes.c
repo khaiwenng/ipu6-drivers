@@ -1411,6 +1411,10 @@ static int _max9x_s_remote_stream(struct max9x_common *common, u32 sink_pad,
 		return -ENODEV;
 	}
 
+	dev_dbg(common->dev, "stream %s %s:%d",
+		enable ? "enable" : "disable",
+		remote_sd->name, remote_pad->index);
+
 	if (common->type == MAX9X_DESERIALIZER) {
 		ret = enable ? v4l2_subdev_enable_streams(remote_sd,
 							  remote_pad->index,
@@ -1420,7 +1424,15 @@ static int _max9x_s_remote_stream(struct max9x_common *common, u32 sink_pad,
 							   BIT(sink_stream));
 
 	} else {
-		ret = v4l2_subdev_call(remote_sd, video, s_stream, enable);
+		/* call enable/disable stream */
+		if (enable)
+			ret = v4l2_subdev_enable_streams(remote_sd, remote_pad->index, BIT(sink_stream));
+		else
+			ret = v4l2_subdev_disable_streams(remote_sd, remote_pad->index, BIT(sink_stream));
+
+		/* fallback if enable/disable stream failed */
+		if (ret)
+			ret = v4l2_subdev_call(remote_sd, video, s_stream, enable);
 	}
 
 	if (ret) {
