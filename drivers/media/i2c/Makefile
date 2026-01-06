@@ -13,4 +13,6 @@ endif
 ifeq ($(is_kernel_lt_6_12_15), 0)
 obj-$(CONFIG_VIDEO_ISX031) += isx031.o
 obj-$(CONFIG_VIDEO_MAX9X) += max9x/
+obj-$(CONFIG_VIDEO_D4XX) += d4xx.o
 endif
+

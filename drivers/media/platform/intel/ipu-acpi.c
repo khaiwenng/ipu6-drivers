@@ -64,6 +64,7 @@ static const struct ipu_acpi_devices supported_devices[] = {
 		ISX031_I2C_ADDRESS, 1600 },	// D3 ISX031 HID
 #endif
 #endif
+	{ "INTC10CE", "d4xx" , get_sensor_pdata, NULL, 0, TYPE_SERDES, "max9x", 0x10, 1600 },
 };
 
 static int get_table_index(const char *acpi_name)
@@ -89,6 +90,7 @@ static const struct acpi_device_id ipu_acpi_match[] = {
 	{ "INTC1031", 0 },	// ISX031 HID
 	{ "INTC031M", 0 },	// D3CMC68N-115-084 ISX031 HID
 #endif
+	{ "INTC10CD", 0 },	// D4xx HID
 	{},
 };
 
