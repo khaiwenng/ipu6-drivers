@@ -387,7 +387,7 @@ static int max9296_set_video_pipe_src(struct max9x_common *common, unsigned int 
 
 	return regmap_update_bits(map, MAX9296_VIDEO_PIPE_SEL(pipe_id),
 			MAX9296_VIDEO_PIPE_STR_SEL_FIELD,
-			MAX9X_FIELD_PREP(MAX9296_VIDEO_PIPE_STR_SEL_FIELD, src_pipe));
+			MAX9X_FIELD_PREP(MAX9296_VIDEO_PIPE_STR_SEL_FIELD, pipe_id));
 }
 
 static int max9296_set_video_pipe_maps_enabled(struct max9x_common *common, unsigned int pipe_id, int num_maps)

@@ -351,7 +351,8 @@ static void *parse_serdes_pdata(struct device *dev)
 	des_pdata->num_subdevs = num_ports;
 	des_pdata->subdevs = devm_kzalloc(dev, des_pdata->num_subdevs * sizeof(*des_pdata->subdevs), GFP_KERNEL);
 
-	des_pdata->num_video_pipes = num_ports;
+	/* D457 Specific : Utilize all 4 pipes */
+	des_pdata->num_video_pipes = 4;
 	des_pdata->video_pipes = devm_kzalloc(dev,
 				des_pdata->num_video_pipes * sizeof(*des_pdata->video_pipes), GFP_KERNEL);
 
@@ -1776,7 +1777,85 @@ static int max9x_set_fmt(struct v4l2_subdev *sd,
 
 	return 0;
 }
+// D457 specific HACK
+static int max9x_get_frame_desc(struct v4l2_subdev *sd,
+	unsigned int pad, struct v4l2_mbus_frame_desc *desc)
+{
+	struct max9x_common *common = max9x_sd_to_common(sd);
 
+	if (pad < 0 || pad >= common->v4l.num_pads)
+		return -EINVAL;
+
+	if (common->type == MAX9X_DESERIALIZER) {
+		struct max9x_serdes_v4l *v4l = &common->v4l;
+		int n;
+		struct media_pad *local_pad;
+		struct media_pad *remote_pad;
+		struct v4l2_subdev *remote_sd;
+
+		n = max9x_serial_link_to_pad(common, pad);
+		if (n < 0) {
+			dev_err(common->dev, "Invalid link %d", pad);
+			return n;
+		}
+		local_pad = &v4l->pads[n];
+
+		remote_pad = media_pad_remote_pad_first(local_pad);
+		if (IS_ERR_OR_NULL(remote_pad)) {
+			dev_err(common->dev,
+				"Failed to find remote pad for link %d", pad);
+			return IS_ERR(remote_pad) ? PTR_ERR(remote_pad) :
+						    -ENODEV;
+		}
+
+		if (!remote_pad->entity) {
+			dev_err(common->dev, "Remote pad has no entity??");
+			return -ENODEV;
+		}
+
+		remote_sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+		if (!remote_sd) {
+			dev_err(common->dev,
+				"Failed to resolve entity to subdev");
+			return -ENODEV;
+		}
+
+		common = max9x_sd_to_common(remote_sd);
+		v4l = &common->v4l;
+		n = max9x_csi_link_to_pad(common, 0);
+		if (n < 0) {
+			dev_err(common->dev, "Invalid link %d", pad);
+			return n;
+		}
+
+		local_pad = &v4l->pads[n];
+
+		remote_pad = media_pad_remote_pad_first(local_pad);
+		if (IS_ERR_OR_NULL(remote_pad)) {
+			dev_err(common->dev,
+				"Failed to find remote pad for CSI link %d", 0);
+			return IS_ERR(remote_pad) ? PTR_ERR(remote_pad) :
+						    -ENODEV;
+		}
+
+		if (!remote_pad->entity) {
+			dev_err(common->dev, "Remote pad has no entity??");
+			return -ENODEV;
+		}
+
+		remote_sd = media_entity_to_v4l2_subdev(remote_pad->entity);
+		if (!remote_sd) {
+			dev_err(common->dev,
+				"Failed to resolve entity to subdev");
+			return -ENODEV;
+		}
+		return v4l2_subdev_call(remote_sd, pad, get_frame_desc, 0,
+					desc);
+	}
+
+	return 0;
+}
+/*
 static int max9x_get_frame_desc(struct v4l2_subdev *sd, unsigned int pad,
 				struct v4l2_mbus_frame_desc *desc)
 {
@@ -1850,7 +1929,7 @@ out_unlock:
 	v4l2_subdev_unlock_state(state);
 	return ret;
 }
-
+*/
 static int max9x_enum_mbus_code(struct v4l2_subdev *sd,
 				struct v4l2_subdev_state *v4l2_state,
 				struct v4l2_subdev_mbus_code_enum *code)
@@ -2572,6 +2651,7 @@ static int max9x_parse_video_pipe_pdata(struct max9x_common *common,
 			map->dst_csi = map_pdata->dst_csi;
 		}
 		pipe->config.num_maps = video_pipe_pdata->num_maps;
+		pipe->config.dbl_pixel_bpp = video_pipe_pdata->dbl_pixel_bpp;
 	} else if (common->type == MAX9X_SERIALIZER) {
 		if (video_pipe_pdata->num_data_types > max_data_types) {
 			dev_err(dev, "Video pdata: Too many maps");
@@ -2592,6 +2672,9 @@ static int max9x_parse_video_pipe_pdata(struct max9x_common *common,
 			pipe->config.data_type[i] = video_pipe_pdata->data_types[i];
 		}
 		pipe->config.num_data_types = video_pipe_pdata->num_data_types;
+		pipe->config.soft_min_pixel_bpp = video_pipe_pdata->soft_min_pixel_bpp;
+		pipe->config.soft_max_pixel_bpp = video_pipe_pdata->soft_max_pixel_bpp;
+		pipe->config.dbl_pixel_bpp = video_pipe_pdata->dbl_pixel_bpp;
 	}
 
 	return 0;
