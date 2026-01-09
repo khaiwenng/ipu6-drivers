@@ -480,7 +480,12 @@ static int max96724_set_video_pipe_src(struct max9x_common *common,
 	struct device *dev = common->dev;
 	struct regmap *map = common->map;
 
-	dev_dbg(dev, "Video-pipe %d: src_link=%u, src_pipe=%u", pipe_id, link_id, src_pipe);
+	dev_info(dev, "Video-pipe %d: src_link=%u, src_pipe=%u", pipe_id, link_id, src_pipe); // link_id = 0, src_pipe = 4
+
+	// Pipe 0 : Pipe X from Link A
+	// Pipe 1 : Pipe Y from Link A
+	// Pipe 2 : Pipe Z from Link A
+	// Pipe 3 : Pipe U from Link A
 
 	return regmap_update_bits(map, MAX96724_VIDEO_PIPE_SEL(pipe_id),
 		MAX96724_VIDEO_PIPE_SEL_LINK_FIELD(pipe_id)
@@ -546,12 +551,6 @@ static int max96724_set_video_pipe_map(struct max9x_common *common,
 	ret = regmap_write(map, MAX96724_MAP_DST_L(pipe_id, map_id),
 		MAX9X_FIELD_PREP(MAX96724_MAP_DST_L_VC_FIELD, mipi_map->dst_vc)
 		| MAX9X_FIELD_PREP(MAX96724_MAP_DST_L_DT_FIELD, mipi_map->dst_dt));
-	if (ret)
-		goto unlock_exit;
-
-	ret = regmap_write(map, MAX96724_MAP_SRCDST_H(pipe_id, map_id),
-		MAX9X_FIELD_PREP(MAX96724_MAP_SRCDST_H_SRC_VC_FIELD, mipi_map->src_vc)
-		| MAX9X_FIELD_PREP(MAX96724_MAP_SRCDST_H_DST_VC_FIELD, mipi_map->dst_vc));
 	if (ret)
 		goto unlock_exit;
 
@@ -636,8 +635,9 @@ static int max96724_csi_double_pixel(struct max9x_common *common,
 		break;
 	case 8:
 		value =	FIELD_PREP(MAX96724_MIPI_TX_ALT_MEM_8BPP, 1U);
-		dev_err(dev, "8 BPP currently unsupported for pixel doubling");
-		return -EINVAL;
+		break; /* D457 specific hack */
+		//dev_err(dev, "8 BPP currently unsupported for pixel doubling");
+		//return -EINVAL;
 	case 10:
 		value =	FIELD_PREP(MAX96724_MIPI_TX_ALT_MEM_10BPP, 1U);
 		break;

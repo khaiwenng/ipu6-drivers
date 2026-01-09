@@ -255,8 +255,6 @@ static struct max9x_pdata *parse_ser_pdata(struct device *dev, const char *ser_n
 	ser_serial_link->rx_freq_mhz = 6000;
 	ser_serial_link->tx_freq_mhz = 187;
 
-	/* TO BE VERIFIED if requrie 2 serial link */
-
 	/* D457 specific : Utilize all 4 pipes */
 	ser_pdata->num_video_pipes = 4;
 	ser_pdata->video_pipes = devm_kzalloc(dev,
@@ -385,7 +383,7 @@ static void *parse_serdes_pdata(struct device *dev)
 			des_video_pipe = &des_pdata->video_pipes[i];
 			des_video_pipe->serial_link_id = serial_link_id;
 			des_video_pipe->pipe_id = i;
-			des_video_pipe->src_pipe_id = video_pipe_id; /* to check for d4xx, why src_pipe is 4*/
+			des_video_pipe->src_pipe_id = i; /* to check for d4xx, why src_pipe is 4*/
 
 			/* D457 Specific : Different data types for different pipes 
 			 * pipe 0,1 : 4 maps: 0x00. 0x01, 0x1E, 0x12
